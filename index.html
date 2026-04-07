@@ -168,9 +168,9 @@ const DATA = {
           techStack:["ArgoCD","Terraform","GitHub Actions / GitLab CI","Trivy for scanning"],
           connects:["k8s","envs"]},
         {id:"observability",name:"Observability",icon:"OB",
-          desc:"Full-stack monitoring with metrics, traces, logs, and AI-specific dashboards.",
-          features:["Prometheus metrics for all services","Distributed tracing with OpenTelemetry","Structured logging with JSON and correlation IDs","Grafana dashboards: health, usage, model performance","SLO-based alerting: latency, error rate, token budget","AI metrics: tokens/sec, time-to-first-token, cost per conversation"],
-          techStack:["Prometheus + Grafana","OpenTelemetry Collector","Loki for logs","PagerDuty"],
+          desc:"Two-layer monitoring: LangSmith for AI-native trace debugging and prompt evaluation, plus OpenTelemetry + Prometheus + Grafana for infrastructure health and operational dashboards. Together they answer both 'why did the agent give a wrong answer?' and 'why is latency spiking?'",
+          features:["LangSmith: step-by-step agent trace replay, prompt A/B comparison, quality evals on production traces, annotation queues for human review, failure pattern clustering","OpenTelemetry + Grafana: distributed tracing across all services, Prometheus metrics (latency, error rate, throughput), infrastructure monitoring (CPU, memory, pods)","Combined: LangSmith shows the 'why' (which prompt/tool failed), Grafana shows the 'what' (latency spike, pod crash)","SLO-based alerting via Grafana: latency > p95 target, error rate > threshold, token budget > 80%","Structured logging with Loki: JSON logs with correlation IDs, searchable and correlated with traces","Alternative: Langfuse (open-source LangSmith) for orgs wanting full self-hosting with no vendor dependency"],
+          techStack:["LangSmith (AI-native tracing + eval)","OpenTelemetry Collector","Prometheus + Grafana","Loki for logs","Langfuse (open-source alternative)","PagerDuty for alerting"],
           connects:["k8s","telemetry"]},
         {id:"secrets",name:"Secrets management",icon:"KV",
           desc:"Centralized secrets storage with rotation, environment scoping, and audit trails.",
@@ -228,34 +228,6 @@ const DATA = {
     {step:8,label:"Response assembly",detail:"The orchestrator assembles the final response: LLM output + source citations + tool results. Output guardrails check for PII leakage, toxicity, and hallucination. Response streams to user.",layer:"services",component:"orchestrator"},
     {step:9,label:"Telemetry captured",detail:"The full execution is logged: tokens used, latency per step, model and provider, cost calculated, sources cited, tools called. Spans sent to OpenTelemetry collector → ClickHouse.",layer:"data",component:"telemetry"},
     {step:10,label:"State persisted",detail:"Conversation updated in PostgreSQL. Execution log stored with step-by-step replay data. Cost attributed to team's budget. Audit record written to immutable log.",layer:"data",component:"opdb"}
-  ],
-  techStack:[
-    {cat:"Frontend",items:[{name:"React / Next.js",why:"Component-based UI with SSR for portal"},{name:"TailwindCSS",why:"Rapid UI development with design system"},{name:"WebSocket client",why:"Streaming LLM responses in real-time"}]},
-    {cat:"Backend",items:[{name:"Python (FastAPI)",why:"Primary API — fast, async, great LLM ecosystem"},{name:"Go services",why:"High-throughput hot paths: gateway, streaming proxy"},{name:"Celery + Redis",why:"Async job queue for doc processing, embeddings"}]},
-    {cat:"AI / ML",items:[{name:"LangGraph",why:"DAG-based agent orchestration with state mgmt"},{name:"LiteLLM",why:"Unified LLM provider interface for model router"},{name:"Sentence Transformers",why:"Self-hosted embedding models"},{name:"Unstructured.io",why:"Document parsing and chunking"}]},
-    {cat:"Databases",items:[{name:"PostgreSQL 16+",why:"Operational data with pgvector extension"},{name:"Qdrant",why:"Purpose-built vector DB for semantic search"},{name:"Redis 7+",why:"Cache, sessions, rate limiting, pub/sub"},{name:"ClickHouse",why:"Columnar analytics for telemetry and cost"}]},
-    {cat:"Infrastructure",items:[{name:"Kubernetes (EKS/GKE)",why:"Container orchestration with GPU support"},{name:"Terraform",why:"Infrastructure as code"},{name:"ArgoCD",why:"GitOps continuous delivery"},{name:"Vault",why:"Secrets management with rotation"}]},
-    {cat:"Observability",items:[{name:"OpenTelemetry",why:"Distributed tracing standard"},{name:"Prometheus + Grafana",why:"Metrics and dashboards"},{name:"Loki",why:"Log aggregation with Grafana"}]}
-  ],
-  phases:[
-    {phase:"Phase 1 — Foundation",time:"Months 1–3",color:"#1D9E75",items:[
-      {what:"Core API + web portal",detail:"Chat interface, basic agent execution, user authentication"},
-      {what:"Single LLM provider",detail:"Start with one provider (e.g. Anthropic Claude) behind the model router abstraction"},
-      {what:"Basic RAG pipeline",detail:"Document upload, chunking, embedding, vector search — simple but functional"},
-      {what:"SSO + team RBAC",detail:"Okta/Entra ID integration, team creation, basic role assignment"},
-      {what:"Usage logging",detail:"Token counting, basic cost tracking, request logging"}]},
-    {phase:"Phase 2 — Scale",time:"Months 4–6",color:"#378ADD",items:[
-      {what:"Multi-provider model router",detail:"Add OpenAI, Azure, Bedrock. Cost-aware routing and failover"},
-      {what:"Agent orchestrator",detail:"Full DAG engine with tool calling, conditional branches, parallel execution"},
-      {what:"MCP integration",detail:"Enterprise tool connectors: Jira, Confluence, Slack. Tool catalog and governance"},
-      {what:"Prompt registry",detail:"Versioning, A/B testing, approval workflows"},
-      {what:"Cost controls",detail:"Per-team budgets, alerts, chargeback reports"}]},
-    {phase:"Phase 3 — Enterprise",time:"Months 7–12",color:"#7F77DD",items:[
-      {what:"Self-hosted models",detail:"vLLM deployment on GPU nodes for sensitive workloads"},
-      {what:"Advanced governance",detail:"PII detection, content guardrails, eval benchmarks, compliance exports"},
-      {what:"Environment promotion",detail:"Dev/staging/prod pipeline with canary deploys and automated gates"},
-      {what:"API marketplace",detail:"Internal catalog of agents and capabilities for cross-team discovery"},
-      {what:"Agent builder UI",detail:"Visual DAG editor for non-developers to compose AI workflows"}]}
   ]
 };
 
@@ -264,42 +236,43 @@ function Tab({active,onClick,children}){
   "var(--tx2)",background:active?"#534AB7":"transparent",border:"none",borderRadius:8,cursor:"pointer",transition:"all .15s",whiteSpace:"nowrap"}}>{children}</button>;
 }
 
-function Overview({onSelect}){
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      {DATA.layers.map(layer=>(
-        <div key={layer.id}>
-          <div onClick={()=>onSelect(layer.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",borderRadius:12,cursor:"pointer",border:"1px solid var(--bdl)",background:"var(--bg1)",transition:"all .15s"}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=layer.color;e.currentTarget.style.transform="translateX(4px)";}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--bdl)";e.currentTarget.style.transform="none";}}>
-            <div style={{width:36,height:36,borderRadius:10,background:layer.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:600,flexShrink:0}}>{layer.n}</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:15,fontWeight:600,color:"var(--tx1)"}}>{layer.name}</div>
-              <div style={{fontSize:12,color:"var(--tx3)",marginTop:1}}>{layer.tag}</div>
-            </div>
-            <div style={{fontSize:12,color:"var(--tx3)"}}>{layer.components.length} components &#8250;</div>
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"6px 0 2px 52px"}}>
-            {layer.components.map(c=>(
-              <div key={c.id} onClick={e=>{e.stopPropagation();onSelect(layer.id,c.id);}}
-                style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:500,color:layer.color,background:layer.bg,cursor:"pointer",border:"1px solid transparent",transition:"all .12s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=layer.color}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
-                {c.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+function Architecture({selLayer,selComp,onSelect}){
+  const [localComp,setLocalComp]=useState(selComp||null);
+  useEffect(()=>{setLocalComp(selComp||null);},[selComp]);
+  const layer=selLayer?DATA.layers.find(l=>l.id===selLayer):null;
+  const comp=layer&&localComp?layer.components.find(c=>c.id===localComp):null;
 
-function LayerDetail({layerId,componentId,onSelect}){
-  const layer=DATA.layers.find(l=>l.id===layerId);
-  const [selComp,setSelComp]=useState(componentId||null);
-  useEffect(()=>{setSelComp(componentId||null);},[componentId]);
-  const comp=selComp?layer.components.find(c=>c.id===selComp):null;
+  if(!layer){
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        {DATA.layers.map(ly=>(
+          <div key={ly.id}>
+            <div onClick={()=>onSelect(ly.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",borderRadius:12,cursor:"pointer",border:"1px solid var(--bdl)",background:"var(--bg1)",transition:"all .15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=ly.color;e.currentTarget.style.transform="translateX(4px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--bdl)";e.currentTarget.style.transform="none";}}>
+              <div style={{width:36,height:36,borderRadius:10,background:ly.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:600,flexShrink:0}}>{ly.n}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:600,color:"var(--tx1)"}}>{ly.name}</div>
+                <div style={{fontSize:12,color:"var(--tx3)",marginTop:1}}>{ly.tag}</div>
+              </div>
+              <div style={{fontSize:12,color:"var(--tx3)"}}>{ly.components.length} components &#8250;</div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"6px 0 2px 52px"}}>
+              {ly.components.map(c=>(
+                <div key={c.id} onClick={e=>{e.stopPropagation();onSelect(ly.id,c.id);}}
+                  style={{padding:"5px 12px",borderRadius:7,fontSize:12,fontWeight:500,color:ly.color,background:ly.bg,cursor:"pointer",border:"1px solid transparent",transition:"all .12s"}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor=ly.color}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
+                  {c.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div>
       <button onClick={()=>onSelect(null)} style={{fontSize:13,color:"var(--tx3)",background:"none",border:"none",cursor:"pointer",padding:"0 0 10px",display:"flex",alignItems:"center",gap:4}}>&#8592; All layers</button>
@@ -313,8 +286,8 @@ function LayerDetail({layerId,componentId,onSelect}){
       <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.7,marginBottom:16}}>{layer.desc}</p>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
         {layer.components.map(c=>(
-          <button key={c.id} onClick={()=>setSelComp(selComp===c.id?null:c.id)}
-            style={{padding:"8px 16px",borderRadius:9,fontSize:13,fontWeight:selComp===c.id?600:400,color:selComp===c.id?"#fff":layer.color,background:selComp===c.id?layer.color:layer.bg,border:"none",cursor:"pointer",transition:"all .15s"}}>{c.name}</button>
+          <button key={c.id} onClick={()=>setLocalComp(localComp===c.id?null:c.id)}
+            style={{padding:"8px 16px",borderRadius:9,fontSize:13,fontWeight:localComp===c.id?600:400,color:localComp===c.id?"#fff":layer.color,background:localComp===c.id?layer.color:layer.bg,border:"none",cursor:"pointer",transition:"all .15s"}}>{c.name}</button>
         ))}
       </div>
       {comp&&(
@@ -436,88 +409,27 @@ function RequestFlow({onSelect}){
   );
 }
 
-function TechStackView(){
-  const [openCat,setOpenCat]=useState(null);
-  return(
-    <div>
-      <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.6,marginBottom:14}}>Recommended technology for each layer. Click a category to see choices and rationale.</p>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {DATA.techStack.map((cat,ci)=>(
-          <div key={ci}>
-            <div onClick={()=>setOpenCat(openCat===ci?null:ci)} style={{padding:"12px 18px",borderRadius:12,cursor:"pointer",background:"var(--bg1)",border:`1px solid ${openCat===ci?"var(--bd)":"var(--bdl)"}`,transition:"all .15s"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:15,fontWeight:600,color:"var(--tx1)"}}>{cat.cat}</span>
-                <span style={{fontSize:12,color:"var(--tx3)"}}>{cat.items.length} tools {openCat===ci?"▾":"▸"}</span>
-              </div>
-            </div>
-            {openCat===ci&&(
-              <div style={{display:"flex",flexDirection:"column",gap:4,padding:"8px 0 0 18px"}}>
-                {cat.items.map((item,ii)=>(
-                  <div key={ii} style={{display:"flex",gap:12,alignItems:"baseline",padding:"8px 14px",borderRadius:8,borderLeft:"3px solid #534AB7"}}>
-                    <span style={{fontSize:14,fontWeight:600,color:"var(--tx1)",minWidth:150}}>{item.name}</span>
-                    <span style={{fontSize:13,color:"var(--tx2)"}}>{item.why}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PhasesView(){
-  return(
-    <div>
-      <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.6,marginBottom:14}}>Phased rollout — start simple, prove value, then scale. Each phase builds on the previous.</p>
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        {DATA.phases.map((p,pi)=>(
-          <div key={pi} style={{borderRadius:14,border:"1px solid var(--bdl)",borderLeft:`4px solid ${p.color}`,overflow:"hidden"}}>
-            <div style={{padding:"14px 20px",background:"var(--bg2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:16,fontWeight:600,color:"var(--tx1)"}}>{p.phase}</span>
-              <span style={{fontSize:12,color:"var(--tx3)",background:"var(--bg3)",padding:"3px 10px",borderRadius:6}}>{p.time}</span>
-            </div>
-            <div style={{padding:"10px 20px 16px"}}>
-              {p.items.map((item,ii)=>(
-                <div key={ii} style={{padding:"8px 0",borderBottom:ii<p.items.length-1?"1px solid var(--bdl)":"none"}}>
-                  <div style={{fontSize:14,fontWeight:600,color:"var(--tx1)"}}>{item.what}</div>
-                  <div style={{fontSize:13,color:"var(--tx2)",lineHeight:1.5,marginTop:3}}>{item.detail}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function App(){
-  const [tab,setTab]=useState("overview");
+  const [tab,setTab]=useState("architecture");
   const [selLayer,setSelLayer]=useState(null);
   const [selComp,setSelComp]=useState(null);
   const handleSelect=useCallback((layerId,compId)=>{
-    if(layerId===null){setSelLayer(null);setSelComp(null);setTab("overview");}
-    else{setSelLayer(layerId);setSelComp(compId||null);setTab("layers");}
+    if(layerId===null){setSelLayer(null);setSelComp(null);}
+    else{setSelLayer(layerId);setSelComp(compId||null);setTab("architecture");}
   },[]);
-  const tabs=[{id:"overview",label:"Overview"},{id:"layers",label:"Layers"},{id:"flow",label:"Request flow"},{id:"tech",label:"Tech stack"},{id:"phases",label:"Phases"}];
+  const tabs=[{id:"architecture",label:"Architecture"},{id:"flow",label:"Request flow"}];
   return(
     <div style={{maxWidth:740,margin:"0 auto",padding:"24px 16px"}}>
       <div style={{marginBottom:20}}>
         <div style={{fontSize:24,fontWeight:700,color:"var(--tx1)",marginBottom:2}}>Enterprise AI platform</div>
         <div style={{fontSize:14,color:"var(--tx3)"}}>Interactive architecture explorer — click anything to drill in</div>
       </div>
-      <div style={{display:"flex",gap:4,marginBottom:20,overflowX:"auto",paddingBottom:4,background:"var(--bg2)",borderRadius:10,padding:4}}>
-        {tabs.map(t=><Tab key={t.id} active={tab===t.id} onClick={()=>{setTab(t.id);if(t.id==="overview"){setSelLayer(null);setSelComp(null);}}}>{t.label}</Tab>)}
+      <div style={{display:"flex",gap:4,marginBottom:20,background:"var(--bg2)",borderRadius:10,padding:4,width:"fit-content"}}>
+        {tabs.map(t=><Tab key={t.id} active={tab===t.id} onClick={()=>{setTab(t.id);if(t.id==="architecture"){setSelLayer(null);setSelComp(null);}}}>{t.label}</Tab>)}
       </div>
       <div style={{minHeight:400}}>
-        {tab==="overview"&&<Overview onSelect={handleSelect}/>}
-        {tab==="layers"&&selLayer&&<LayerDetail layerId={selLayer} componentId={selComp} onSelect={handleSelect}/>}
-        {tab==="layers"&&!selLayer&&<Overview onSelect={handleSelect}/>}
+        {tab==="architecture"&&<Architecture selLayer={selLayer} selComp={selComp} onSelect={handleSelect}/>}
         {tab==="flow"&&<RequestFlow onSelect={handleSelect}/>}
-        {tab==="tech"&&<TechStackView/>}
-        {tab==="phases"&&<PhasesView/>}
       </div>
       <div style={{textAlign:"center",marginTop:32,padding:"16px 0",borderTop:"1px solid var(--bdl)",fontSize:12,color:"var(--tx3)"}}>Enterprise AI Platform Architecture — Internal Documentation</div>
     </div>
