@@ -23,9 +23,8 @@ button{font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel" data-type="module">
-const {useState,useCallback} = React;
+const {useState,useCallback,useEffect,useRef} = React;
 
-/* ─── Simplified 4-layer architecture ─── */
 const LAYERS = [
   {
     id:"access", n:"1", name:"Access Layer", tag:"Portal · API · Auth",
@@ -43,17 +42,17 @@ const LAYERS = [
         desc:"Chat interface, visual agent builder, knowledge base manager, prompt studio, usage dashboards. Built in React.",
         details:["Chat UI with streaming responses","Drag-and-drop agent workflow builder","File upload for knowledge bases","Prompt testing playground","Team usage and cost dashboards"]},
       {id:"api", name:"REST API + Gateway", icon:"⚡", techYouKnow:"FastAPI / REST APIs",
-        desc:"Single entry point for all requests. Validates auth tokens, applies rate limits, routes to the right service. Built with FastAPI behind an API gateway.",
-        details:["JWT validation on every request","Rate limiting per API key and team","Auto-generated OpenAPI documentation","SDKs for Python and JavaScript","Request logging with correlation IDs for tracing"]},
+        desc:"Single entry point for all requests. Validates auth tokens, applies rate limits, routes to the right service.",
+        details:["JWT validation on every request","Rate limiting per API key and team","Auto-generated OpenAPI documentation","SDKs for Python and JavaScript","Request logging with correlation IDs"]},
       {id:"auth", name:"Auth & RBAC", icon:"🔐", techYouKnow:"Azure AD",
-        desc:"Enterprise SSO integration. Users log in with corporate credentials. Roles and team memberships control what they can access.",
-        details:["SSO via Azure AD (OIDC/SAML) — no separate credentials","Four roles: viewer → builder → admin → platform-admin","Team-scoped resources — each team sees only their agents, prompts, KBs","Environment-aware: different permissions in dev vs prod","Auto-provisioning from corporate directory via SCIM"]}
+        desc:"Enterprise SSO integration. Users log in with corporate credentials. Roles and team memberships control access.",
+        details:["SSO via Azure AD (OIDC/SAML)","Four roles: viewer → builder → admin → platform-admin","Team-scoped resources — each team sees only their own","Environment-aware: different permissions in dev vs prod","Auto-provisioning from corporate directory via SCIM"]}
     ]
   },
   {
     id:"core", n:"2", name:"Core AI Services", tag:"Orchestration · RAG · Routing",
     color:"#378ADD", bg:"#E6F1FB",
-    desc:"The brain of the platform. Agent orchestration engine, RAG pipeline for knowledge retrieval, model router for multi-provider access, and tool integration via MCP. This is where your AI/ML expertise lives.",
+    desc:"The brain of the platform. Agent orchestration, RAG pipeline, model routing, tool integration via MCP, and prompt management.",
     talkingPoints:[
       "Orchestrator runs agents as DAG workflows — each step can be an LLM call, retrieval, tool use, or conditional branch",
       "Knowledge service is a full RAG pipeline: ingest → chunk → embed → hybrid search → re-rank → cite sources",
@@ -63,95 +62,94 @@ const LAYERS = [
     ],
     components:[
       {id:"orchestrator", name:"Agent Orchestrator", icon:"🧠", techYouKnow:"Python / Agentic Workflows",
-        desc:"Executes AI agents as directed acyclic graphs (DAGs). Each node is an LLM call, retrieval step, tool invocation, or decision branch. Manages conversation state, retries, and streaming.",
-        details:["Agents defined as DAG workflows — composable, reusable steps","Conversation memory: full history, sliding window, or LLM-summarized","Stateful sessions with checkpointing for long workflows","Streaming output — tokens sent to user as they're generated","Execution history with step-by-step replay for debugging"]},
-      {id:"knowledge", name:"Knowledge & RAG", icon:"📚", techYouKnow:"RAG / Embeddings / Chunking / HuggingFace",
-        desc:"Full retrieval-augmented generation pipeline. Two paths: async ingestion (upload → chunk → embed → store in Azure AI Search) and real-time retrieval (query → hybrid search → re-rank → return with citations).",
-        details:["Ingestion: PDF, DOCX, HTML, CSV, PPTX — extracted and cleaned","Chunking strategies: fixed-size, semantic, recursive, parent-child","Embedding: Azure OpenAI ada-003, or self-hosted models via HuggingFace","Hybrid search via Azure AI Search: vector similarity + BM25 keyword in one query","Azure AI Search semantic ranker for re-ranking — source attribution on every chunk"]},
+        desc:"Executes AI agents as directed acyclic graphs (DAGs). Each node is an LLM call, retrieval step, tool invocation, or decision branch.",
+        details:["Agents defined as DAG workflows — composable, reusable steps","Conversation memory: full history, sliding window, or LLM-summarized","Stateful sessions with checkpointing for long workflows","Streaming output — tokens sent to user as generated","Execution history with step-by-step replay for debugging"]},
+      {id:"knowledge", name:"Knowledge & RAG", icon:"📚", techYouKnow:"RAG / Embeddings / HuggingFace",
+        desc:"Full RAG pipeline. Async ingestion (upload → chunk → embed → index) and real-time retrieval (query → hybrid search → re-rank → cite).",
+        details:["Ingestion: PDF, DOCX, HTML, CSV, PPTX — extracted and cleaned","Chunking: fixed-size, semantic, recursive, parent-child","Embedding: Azure OpenAI ada-003, or self-hosted via HuggingFace","Hybrid search: vector similarity + BM25 keyword in one query","Semantic re-ranker — source attribution on every chunk"]},
       {id:"router", name:"Model Router", icon:"🔀", techYouKnow:"Python / LLM APIs",
-        desc:"Unified interface to multiple LLM providers. Teams specify a capability tier (fast/balanced/frontier), router picks the best available model based on cost, latency, and team policy.",
-        details:["Single API format — switch providers without code changes","Three tiers: fast (Haiku/GPT-4o-mini), balanced (Sonnet), frontier (Opus/GPT-4o)","Automatic failover if a provider is down","Response caching for repeated queries — saves cost","Token counting and cost tracking per call"]},
-      {id:"tools", name:"Tool / MCP Integration", icon:"🔧", techYouKnow:"Python / REST APIs / Salesforce",
-        desc:"Connects agents to enterprise systems via MCP (Model Context Protocol). Jira, Salesforce, Confluence, SQL databases, code execution — all through a standardized, governed interface.",
-        details:["MCP protocol for standardized tool access","Connectors: Jira, Confluence, Salesforce, Slack, SQL databases","Code execution in Docker sandboxes — isolated and logged","Tool catalog with approval workflow — new tools need platform-admin review","Every tool call logged: inputs, outputs, duration, errors"]},
+        desc:"Unified interface to multiple LLM providers. Teams specify a tier (fast/balanced/frontier), router picks the best model.",
+        details:["Single API format — switch providers without code changes","Three tiers: fast (Haiku/4o-mini), balanced (Sonnet), frontier (Opus/4o)","Automatic failover if a provider is down","Response caching for repeated queries","Token counting and cost tracking per call"]},
+      {id:"tools", name:"Tool / MCP Integration", icon:"🔧", techYouKnow:"Python / REST APIs",
+        desc:"Connects agents to enterprise systems via MCP. Jira, Salesforce, Confluence, SQL, code execution — standardized and governed.",
+        details:["MCP protocol for standardized tool access","Connectors: Jira, Confluence, Salesforce, Slack, SQL","Code execution in Docker sandboxes","Tool catalog with approval workflow","Every tool call logged: inputs, outputs, duration"]},
       {id:"prompts", name:"Prompt Management", icon:"📝", techYouKnow:"Prompt Engineering",
-        desc:"Version-controlled prompt store. Create, test, A/B test, and deploy prompts with approval workflows. Performance tracked per version.",
-        details:["Git-like versioning with diff views","A/B testing: split traffic between prompt variants","Approval flow: draft → review → staging → production","Variable interpolation — reusable templates with dynamic values","Performance metrics per version: quality scores, latency, cost"]}
+        desc:"Version-controlled prompt store. Create, test, A/B test, and deploy prompts with approval workflows.",
+        details:["Git-like versioning with diff views","A/B testing: split traffic between variants","Approval flow: draft → review → staging → production","Variable interpolation — reusable templates","Performance metrics per version: quality, latency, cost"]}
     ]
   },
   {
-    id:"data", n:"3", name:"Data & Storage", tag:"Postgres · Vector DB · S3 · Cache",
+    id:"data", n:"3", name:"Data & Storage",     tag:"Postgres · Vector DB · Blob · Cache",
     color:"#BA7517", bg:"#FAEEDA",
-    desc:"Four purpose-built stores, each optimized for its job. PostgreSQL for structured data, a vector database for embeddings, S3 for files, and Redis for caching. Plus telemetry for cost and usage tracking.",
+    desc:"Four purpose-built stores. PostgreSQL for structured data, vector DB for embeddings, Azure Blob for files, Redis for caching. Plus telemetry.",
     talkingPoints:[
       "PostgreSQL is the operational backbone — users, teams, agents, prompts, audit logs, execution history",
-      "Vector search via Azure AI Search — managed, hybrid search built-in, native Azure OpenAI integration. Weaviate as open-source alternative",
-      "S3 stores uploaded files — bucket-per-team isolation, encrypted, with lifecycle rules",
-      "Redis caches sessions, rate limits, LLM responses, and provider health — keeps things fast",
+      "Vector search via Azure AI Search — managed, hybrid search built-in, native Azure integration",
+      "Azure Blob Storage for uploaded files — container-per-team isolation, encrypted, lifecycle tiering (Hot/Cool/Archive)",
+      "Redis caches sessions, rate limits, LLM responses — keeps things fast",
       "Telemetry captures every LLM call: tokens, cost, latency — feeds dashboards and cost attribution"
     ],
     components:[
       {id:"postgres", name:"PostgreSQL", icon:"🗄", techYouKnow:"SQL",
-        desc:"Primary operational database. Stores users, teams, agent definitions (as JSON), prompts, conversations, execution logs, and audit trail. Row-level security isolates teams.",
-        details:["Core tables: users, teams, agents, prompts, messages, executions, audit_log","Agent DAGs stored as validated JSON with indexed fields","Row-level security — teams can only query their own data","Append-only audit table — immutable compliance record","Connection pooling (PgBouncer), automated backups, point-in-time recovery"]},
-      {id:"vectordb", name:"Vector Search", icon:"🧮", techYouKnow:"Embeddings / RAG / Azure",
-        desc:"Stores document embeddings for semantic search. Azure AI Search as the primary option — fully managed, hybrid search built-in, native Azure integration. Weaviate as an open-source alternative for teams needing more control.",
-        details:["Azure AI Search (primary): managed service, hybrid vector + keyword search out of the box","Native integration with Azure OpenAI for embeddings — minimal glue code","Built-in semantic ranker for re-ranking results without a separate model","Weaviate (alternative): open-source, self-hosted on AKS or Weaviate Cloud","Multi-tenancy support: isolate team data within the same index using filters","HNSW indexing: 10-50ms search across millions of vectors"]},
-      {id:"objstore", name:"File Storage (S3)", icon:"📦", techYouKnow:"Azure Blob / Cloud Storage",
-        desc:"Object storage for uploaded documents, images, and processed artifacts. Bucket-per-team isolation. Pre-signed URLs for secure direct upload/download.",
-        details:["Bucket-per-team with IAM isolation","Pre-signed URLs: users upload directly to S3, no data through our servers","Encrypted at rest (AES-256)","Lifecycle rules: hot → infrequent access → archive","Cross-region replication for disaster recovery"]},
+        desc:"Primary operational database. Users, teams, agents, prompts, conversations, executions, audit trail.",
+        details:["Core tables: users, teams, agents, prompts, messages, executions, audit_log","Agent DAGs stored as validated JSON","Row-level security — teams can only query their own data","Append-only audit table — immutable compliance record","Connection pooling, automated backups, point-in-time recovery"]},
+      {id:"vectordb", name:"Vector Search", icon:"🧮", techYouKnow:"Embeddings / Azure",
+        desc:"Azure AI Search for semantic search — managed, hybrid vector + keyword, native Azure integration. Weaviate as open-source alt.",
+        details:["Azure AI Search: managed hybrid vector + keyword search","Native Azure OpenAI integration for embeddings","Built-in semantic ranker for re-ranking","Weaviate alternative: open-source, self-hosted","HNSW indexing: 10-50ms at millions of vectors"]},
+      {id:"objstore", name:"Azure Blob Storage", icon:"📦", techYouKnow:"Azure Blob / Storage Accounts",
+        desc:"Object storage for documents and artifacts. Container-per-team isolation via Azure RBAC. SAS tokens for secure direct upload/download. S3-compatible API available for multi-cloud.",
+        details:["Container-per-team isolation with Azure RBAC + Managed Identity","SAS tokens for secure direct upload/download (time-limited, scoped)","Encrypted at rest (Azure SSE with Microsoft-managed or customer-managed keys)","Lifecycle management: Hot → Cool → Archive tiers (auto-tiering available)","Geo-redundant storage (GRS) for disaster recovery across Azure regions","Alternative: AWS S3 if multi-cloud — same interface via S3-compatible API"]},
       {id:"cache", name:"Redis Cache", icon:"⚡", techYouKnow:"Caching concepts",
-        desc:"In-memory cache for low-latency lookups. Caches sessions, conversations, rate limit counters, LLM responses, and provider health status.",
-        details:["Session data: 24hr TTL","Conversation context: 1hr TTL for active chats","Rate limit counters using sliding window algorithm","LLM response cache: identical queries return cached results (saves cost)","Pub/sub for streaming tokens to the portal in real-time"]},
-      {id:"telemetry", name:"Telemetry & Cost Tracking", icon:"📊", techYouKnow:"SQL / Logging / Monitoring",
-        desc:"Every LLM call logged: model, tokens in/out, cost, latency, team, agent. Powers usage dashboards, cost attribution, and budget alerts.",
-        details:["Every call: model, input/output tokens, cost, latency, team, agent ID","Dashboards: cost per team, latency percentiles, model usage trends","Budget alerts at 50%, 80%, 95% of team allocation","At limit: warn, downgrade to cheaper model, or hard block","Can start with PostgreSQL, migrate to ClickHouse at scale"]}
+        desc:"In-memory cache for sessions, conversations, rate limits, LLM responses, and provider health.",
+        details:["Session data: 24hr TTL","Conversation context: 1hr for active chats","Rate limit counters (sliding window)","LLM response cache saves cost","Pub/sub for real-time streaming"]},
+      {id:"telemetry", name:"Telemetry & Cost", icon:"📊", techYouKnow:"SQL / Monitoring",
+        desc:"Every LLM call logged. Powers usage dashboards, cost attribution, and budget alerts.",
+        details:["Every call: model, tokens, cost, latency, team, agent","Dashboards: cost per team, latency, model usage trends","Budget alerts at 50%, 80%, 95%","At limit: warn, downgrade, or block","Start with PostgreSQL, scale to ClickHouse"]}
     ]
   },
   {
     id:"platform", n:"4", name:"Platform & Governance", tag:"K8s · CI/CD · Security · Observability",
     color:"#D85A30", bg:"#FAECE7",
-    desc:"Infrastructure, deployment pipeline, observability, and cross-cutting security controls. Kubernetes on Azure, GitOps CI/CD, and governance guardrails woven into every layer.",
+    desc:"Infrastructure, CI/CD, observability, and cross-cutting security. Kubernetes on Azure, GitOps, and governance guardrails.",
     talkingPoints:[
-      "Kubernetes on Azure (AKS) — namespace per environment (dev/staging/prod), auto-scaling",
-      "CI/CD via GitOps: push to git → automated tests → eval benchmarks → canary deploy → full rollout",
-      "Observability: distributed tracing, metrics, logs, plus AI-specific tracing for agent executions",
-      "Security: PII detection before sending data to external LLMs, input/output guardrails, model allowlists",
-      "Governance: new models and tools need review before production, cost budgets enforced per team"
+      "Kubernetes on Azure (AKS) — namespace per environment, auto-scaling",
+      "CI/CD via GitOps: push to git → tests → eval benchmarks → canary deploy → rollout",
+      "Observability: distributed tracing + AI-specific agent execution tracing",
+      "Security: PII detection, input/output guardrails, model allowlists",
+      "Governance: new models and tools need review, cost budgets enforced per team"
     ],
     components:[
-      {id:"k8s", name:"Kubernetes (AKS)", icon:"☸", techYouKnow:"Docker / Kubernetes / Azure",
-        desc:"All services run as containers on Azure Kubernetes Service. Namespaces separate environments. Horizontal auto-scaling for burst traffic. GPU nodes available for self-hosted models.",
-        details:["Azure Kubernetes Service (AKS) — managed control plane","Namespace per environment: dev, staging, production","Horizontal pod autoscaler for traffic bursts","GPU node pool (A100) for self-hosted models if needed","Network policies: services can only talk to their dependencies"]},
+      {id:"k8s", name:"Kubernetes (AKS)", icon:"☸", techYouKnow:"Docker / K8s / Azure",
+        desc:"All services as containers on AKS. Namespace per environment. Auto-scaling. GPU nodes for self-hosted models.",
+        details:["AKS — managed control plane","Namespace per env: dev, staging, prod","Horizontal pod autoscaler","GPU node pool (A100) for self-hosted models","Network policies for service isolation"]},
       {id:"cicd", name:"CI/CD Pipeline", icon:"🚀", techYouKnow:"Git / CI-CD / Docker",
-        desc:"GitOps deployment: code changes flow through automated pipeline. Tests, security scans, and AI evaluation benchmarks must pass before promotion. Canary deployments with auto-rollback.",
-        details:["GitOps: deployment state lives in git — every deploy is a commit","PR pipeline: lint → unit tests → security scan → AI eval benchmarks","Staging: must pass quality benchmarks before prod promotion","Production: canary deploy (10% traffic) → monitor 15min → full rollout","Auto-rollback if error rate or latency exceeds thresholds"]},
+        desc:"GitOps: code → tests → security scans → eval benchmarks → canary deploy → full rollout with auto-rollback.",
+        details:["GitOps: every deploy is a git commit","PR: lint → test → scan → AI eval benchmarks","Staging must pass quality benchmarks","Production: canary 10% → monitor → rollout","Auto-rollback on SLO violation"]},
       {id:"observability", name:"Observability", icon:"📡", techYouKnow:"Logging / Monitoring",
-        desc:"Two dimensions: infrastructure monitoring (metrics, logs, traces) and AI-specific monitoring (agent execution traces, prompt performance, quality scores).",
-        details:["Distributed tracing: follow a request across all services","Metrics: latency, error rates, throughput — with alerting","Logs: structured, centralized, searchable","AI traces: step-by-step replay of agent executions","Dashboards: platform health, model performance, cost, per-agent quality"]},
+        desc:"Infra monitoring (metrics, logs, traces) + AI monitoring (agent traces, prompt performance, quality scores).",
+        details:["Distributed tracing across all services","Metrics: latency, error rates, throughput + alerting","Structured centralized logs","AI traces: step-by-step agent replay","Dashboards: health, cost, model perf, per-agent quality"]},
       {id:"security", name:"Security & Governance", icon:"🛡", techYouKnow:"General concepts",
-        desc:"Cross-cutting controls enforced at every layer. PII detection before external API calls, input/output guardrails, model allowlists, and immutable audit trail for compliance.",
-        details:["PII detection (Presidio): scan and redact before sending to external LLMs","Input guardrails: prompt injection and jailbreak detection","Output guardrails: toxicity, hallucination scoring, PII leakage check","Model allowlist: new models need security review + eval pass before production","Immutable audit log: every action recorded, exportable for compliance (SOC 2, GDPR)"]}
+        desc:"PII detection, input/output guardrails, model allowlists, immutable audit trail. Enforced at every layer.",
+        details:["PII detection (Presidio): scan and redact before external LLMs","Input guardrails: prompt injection, jailbreak detection","Output guardrails: toxicity, hallucination, PII leakage","Model allowlist: security review + eval before production","Immutable audit log for SOC 2, GDPR compliance"]}
     ]
   }
 ];
 
-/* ─── Simplified 8-step request flow ─── */
 const FLOW = [
-  {step:1, label:"User sends message", detail:"User types a question in the React portal or sends via the FastAPI REST API. The request includes the agent ID, message text, conversation ID, and any attached files.", layer:"access", comp:"portal"},
-  {step:2, label:"Auth + gateway validates", detail:"API gateway checks the JWT token against Azure AD. Extracts team and role. Checks rate limits. Generates a correlation ID for end-to-end tracing. Routes to the orchestrator.", layer:"access", comp:"api"},
-  {step:3, label:"Orchestrator runs agent", detail:"Loads the agent's DAG definition. Creates or resumes the conversation session. Walks the graph step-by-step: retrieval, LLM calls, tool use, conditional branches. Each step streams results.", layer:"core", comp:"orchestrator"},
-  {step:4, label:"RAG retrieval", detail:"Embeds the query using the embedding model. Runs hybrid search: vector similarity (semantic) + BM25 (keyword). Fuses results with Reciprocal Rank Fusion. Re-ranks with a cross-encoder. Returns top chunks with source citations.", layer:"core", comp:"knowledge"},
-  {step:5, label:"Model router calls LLM", detail:"Selects the right model based on the agent's tier setting and team policy. Applies the prompt template. Calls the LLM provider. Streams tokens back. Logs token count and cost.", layer:"core", comp:"router"},
-  {step:6, label:"Tool execution (if needed)", detail:"If the LLM decides to use a tool (query Jira, run SQL, search Salesforce), the orchestrator routes to the MCP layer. The tool runs in a sandboxed environment. Results are fed back to the LLM for the next step.", layer:"core", comp:"tools"},
-  {step:7, label:"Guardrails + response", detail:"Output passes through guardrails: PII leak check, toxicity filter, hallucination score. Source citations are formatted. Final response is streamed to the user in real-time.", layer:"platform", comp:"security"},
-  {step:8, label:"Log, persist, attribute", detail:"Conversation saved to PostgreSQL. Execution trace stored for replay. Tokens and cost attributed to the team's budget. Telemetry sent to dashboards. Immutable audit record written.", layer:"data", comp:"telemetry"}
+  {step:1, label:"User sends message", detail:"User types a question in the React portal or sends via the REST API. Includes agent ID, message, conversation ID, and any attachments.", layer:"access", comp:"portal"},
+  {step:2, label:"Auth + gateway validates", detail:"API gateway checks JWT against Azure AD. Extracts team/role. Checks rate limits. Generates correlation ID. Routes to orchestrator.", layer:"access", comp:"api"},
+  {step:3, label:"Orchestrator runs agent", detail:"Loads agent DAG definition. Creates/resumes conversation session. Walks graph step-by-step: retrieval, LLM calls, tool use, branching. Streams results.", layer:"core", comp:"orchestrator"},
+  {step:4, label:"RAG retrieval", detail:"Embeds query → vector + BM25 hybrid search → RRF fusion → cross-encoder re-rank → returns top chunks with source citations.", layer:"core", comp:"knowledge"},
+  {step:5, label:"Model router calls LLM", detail:"Selects model based on tier + policy. Applies prompt template. Calls LLM provider. Streams tokens back. Logs token count and cost.", layer:"core", comp:"router"},
+  {step:6, label:"Tool execution (if needed)", detail:"If LLM invokes a tool (Jira, SQL, Salesforce), orchestrator routes to MCP layer. Runs sandboxed. Results fed back to LLM.", layer:"core", comp:"tools"},
+  {step:7, label:"Guardrails + response", detail:"Output passes through: PII leak check, toxicity filter, hallucination score. Citations formatted. Response streamed to user.", layer:"platform", comp:"security"},
+  {step:8, label:"Log, persist, attribute", detail:"Conversation saved. Execution trace stored. Tokens and cost attributed to team budget. Telemetry sent. Audit record written.", layer:"data", comp:"telemetry"}
 ];
 
-const layerMap = {};
-LAYERS.forEach(l => { layerMap[l.id] = l; l.components.forEach(c => { layerMap[c.id] = {comp:c, layer:l}; }); });
+const compMap = {};
+LAYERS.forEach(l => { l.components.forEach(c => { compMap[c.id] = {comp:c, layer:l}; }); });
 
-/* ─── Components ─── */
+/* ─── Layer List View ─── */
 function LayerOverview({ layers, onSelect }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -172,13 +170,15 @@ function LayerOverview({ layers, onSelect }) {
   );
 }
 
+/* ─── Layer Detail ─── */
 function LayerDetail({ layer, selComp, onSelect, onBack }) {
   const [openComp, setOpenComp] = useState(selComp);
   const comp = openComp ? layer.components.find(c => c.id === openComp) : null;
+  useEffect(() => { setOpenComp(selComp); }, [selComp]);
 
   return (
     <div className="fi">
-      <button onClick={onBack} style={{fontSize:13,color:"var(--tx3)",background:"none",border:"none",cursor:"pointer",padding:"0 0 12px",display:"flex",alignItems:"center",gap:4}}>← All layers</button>
+      <button onClick={onBack} style={{fontSize:13,color:"var(--tx3)",background:"none",border:"none",cursor:"pointer",padding:"0 0 12px"}}>← All layers</button>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
         <div style={{width:44,height:44,borderRadius:12,background:layer.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700}}>{layer.n}</div>
         <div>
@@ -188,34 +188,26 @@ function LayerDetail({ layer, selComp, onSelect, onBack }) {
       </div>
       <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.7,marginBottom:14}}>{layer.desc}</p>
 
-      {/* Talking points */}
       <div style={{background:layer.bg,borderRadius:12,padding:"14px 18px",marginBottom:18,border:`1px solid ${layer.color}25`}}>
-        <div style={{fontSize:13,fontWeight:600,color:layer.color,marginBottom:8}}>🎤 Key talking points for presentation</div>
+        <div style={{fontSize:13,fontWeight:600,color:layer.color,marginBottom:8}}>🎤 Key talking points</div>
         {layer.talkingPoints.map((tp,i) => (
-          <div key={i} style={{fontSize:13,color:"var(--tx2)",lineHeight:1.65,padding:"4px 0 4px 14px",borderLeft:`2px solid ${layer.color}50`}}>
-            {tp}
-          </div>
+          <div key={i} style={{fontSize:13,color:"var(--tx2)",lineHeight:1.65,padding:"4px 0 4px 14px",borderLeft:`2px solid ${layer.color}50`}}>{tp}</div>
         ))}
       </div>
 
-      {/* Component buttons */}
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
         {layer.components.map(c => (
           <button key={c.id} onClick={() => setOpenComp(openComp === c.id ? null : c.id)}
             style={{padding:"9px 18px",borderRadius:10,fontSize:13,fontWeight:openComp===c.id?600:400,
-              color:openComp===c.id?"#fff":layer.color,
-              background:openComp===c.id?layer.color:layer.bg,
-              border:"none",cursor:"pointer",transition:"all .15s"}}>
-            {c.icon} {c.name}
-          </button>
+              color:openComp===c.id?"#fff":layer.color,background:openComp===c.id?layer.color:layer.bg,
+              border:"none",cursor:"pointer",transition:"all .15s"}}>{c.icon} {c.name}</button>
         ))}
       </div>
 
-      {/* Component detail */}
       {comp ? (
         <div className="fi" style={{borderRadius:14,border:"1px solid var(--bdl)",borderLeft:`4px solid ${layer.color}`,padding:20,background:"var(--bg1)"}}>
           <div style={{fontSize:18,fontWeight:600,color:"var(--tx1)",marginBottom:4}}>{comp.icon} {comp.name}</div>
-          <div style={{fontSize:12,color:layer.color,fontWeight:600,marginBottom:10,background:layer.bg,display:"inline-block",padding:"3px 10px",borderRadius:6}}>You know this: {comp.techYouKnow}</div>
+          <div style={{fontSize:12,color:layer.color,fontWeight:600,marginBottom:10,background:layer.bg,display:"inline-block",padding:"3px 10px",borderRadius:6}}>You know: {comp.techYouKnow}</div>
           <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.7,marginBottom:14}}>{comp.desc}</p>
           <div style={{fontSize:13,fontWeight:600,color:"var(--tx1)",marginBottom:8}}>Key capabilities</div>
           {comp.details.map((d,i) => (
@@ -223,54 +215,54 @@ function LayerDetail({ layer, selComp, onSelect, onBack }) {
           ))}
         </div>
       ) : (
-        <div style={{padding:20,textAlign:"center",color:"var(--tx3)",fontSize:14,background:"var(--bg2)",borderRadius:12,border:"1px solid var(--bdl)"}}>Select a component above to see details</div>
+        <div style={{padding:20,textAlign:"center",color:"var(--tx3)",fontSize:14,background:"var(--bg2)",borderRadius:12,border:"1px solid var(--bdl)"}}>Select a component above</div>
       )}
     </div>
   );
 }
 
+/* ─── Request Flow (accordion) ─── */
 function RequestFlow({ onSelect }) {
   const [active, setActive] = useState(null);
-
   return (
     <div className="fi">
-      <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.6,marginBottom:18}}>The complete journey of a user's question through the platform — 8 steps from question to answer.</p>
-
+      <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.6,marginBottom:18}}>End-to-end journey — 8 steps from question to answer. Click to expand.</p>
       <div style={{display:"flex",flexDirection:"column",gap:0}}>
         {FLOW.map((s, i) => {
           const ly = LAYERS.find(l => l.id === s.layer);
-          const isActive = active === i;
+          const isA = active === i;
           return (
             <div key={i}>
-              <div onClick={() => setActive(isActive ? null : i)}
-                style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:12,cursor:"pointer",
-                  background:isActive ? ly.color : "var(--bg1)",
-                  border:`1px solid ${isActive ? ly.color : "var(--bdl)"}`,
-                  transition:"all .15s",marginBottom:isActive?0:0}}
-                onMouseEnter={e=>{if(!isActive)e.currentTarget.style.borderColor=ly.color;}}
-                onMouseLeave={e=>{if(!isActive)e.currentTarget.style.borderColor="var(--bdl)";}}>
-                <div style={{width:32,height:32,borderRadius:16,background:isActive?"rgba(255,255,255,0.2)":ly.color,color:isActive?"#fff":"#fff",
+              <div onClick={() => setActive(isA ? null : i)}
+                style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:isA?"12px 12px 0 0":12,cursor:"pointer",
+                  background:isA ? ly.color : "var(--bg1)",border:`1px solid ${isA ? ly.color : "var(--bdl)"}`,
+                  borderBottom:isA?"none":undefined,transition:"all .15s"}}
+                onMouseEnter={e=>{if(!isA)e.currentTarget.style.borderColor=ly.color;}}
+                onMouseLeave={e=>{if(!isA)e.currentTarget.style.borderColor="var(--bdl)";}}>
+                <div style={{width:32,height:32,borderRadius:16,background:isA?"rgba(255,255,255,0.2)":ly.color,color:"#fff",
                   display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0}}>{s.step}</div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:600,color:isActive?"#fff":"var(--tx1)"}}>{s.label}</div>
-                  <div style={{fontSize:12,color:isActive?"rgba(255,255,255,0.7)":ly.color,fontWeight:500}}>{ly.name}</div>
+                  <div style={{fontSize:14,fontWeight:600,color:isA?"#fff":"var(--tx1)"}}>{s.label}</div>
+                  <div style={{fontSize:12,color:isA?"rgba(255,255,255,0.7)":ly.color,fontWeight:500}}>{ly.name}</div>
                 </div>
-                <div style={{fontSize:18,color:isActive?"#fff":"var(--tx3)",transition:"transform .2s",transform:isActive?"rotate(180deg)":"none"}}>⌄</div>
+                <div style={{fontSize:18,color:isA?"#fff":"var(--tx3)",transition:"transform .2s",transform:isA?"rotate(180deg)":"none"}}>⌄</div>
               </div>
-
-              {isActive && (
-                <div className="fi" style={{padding:"16px 20px",margin:"0 0 0 0",background:"var(--bg1)",border:`1px solid ${ly.color}40`,borderTop:"none",borderRadius:"0 0 12px 12px",marginBottom:2}}>
+              {isA && (
+                <div className="fi" style={{padding:"16px 20px",background:"var(--bg1)",border:`1px solid ${ly.color}40`,borderTop:"none",borderRadius:"0 0 12px 12px",marginBottom:2}}>
                   <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.7,marginBottom:12}}>{s.detail}</p>
-                  <button onClick={() => { const info = layerMap[s.comp]; if(info && info.layer) onSelect(info.layer.id, s.comp); }}
-                    style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:ly.color+"18",color:ly.color,border:`1px solid ${ly.color}35`,cursor:"pointer",fontWeight:600}}>
-                    Explore this component →
-                  </button>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <button onClick={() => { const info = compMap[s.comp]; if(info) onSelect(info.layer.id, s.comp); }}
+                      style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:ly.color+"18",color:ly.color,border:`1px solid ${ly.color}35`,cursor:"pointer",fontWeight:600}}>
+                      Explore component →
+                    </button>
+                    {active>0&&<button onClick={e=>{e.stopPropagation();setActive(active-1);}} style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"var(--bg3)",color:"var(--tx2)",border:"1px solid var(--bdl)",cursor:"pointer"}}>← Prev</button>}
+                    {active<FLOW.length-1&&<button onClick={e=>{e.stopPropagation();setActive(active+1);}} style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"var(--bg3)",color:"var(--tx2)",border:"1px solid var(--bdl)",cursor:"pointer"}}>Next →</button>}
+                  </div>
                 </div>
               )}
-
-              {i < FLOW.length - 1 && !isActive && (
+              {i < FLOW.length - 1 && !isA && !(active===i+1) && (
                 <div style={{display:"flex",justifyContent:"flex-start",paddingLeft:30}}>
-                  <div style={{width:2,height:8,background:"var(--bdl)"}}></div>
+                  <div style={{width:2,height:8,background:"var(--bdl)"}}/>
                 </div>
               )}
             </div>
@@ -281,47 +273,144 @@ function RequestFlow({ onSelect }) {
   );
 }
 
+/* ─── App ─── */
 function App() {
-  const [tab, setTab] = useState("architecture");
+  const [tab, setTab] = useState("diagram");
   const [selLayer, setSelLayer] = useState(null);
   const [selComp, setSelComp] = useState(null);
 
   const handleSelect = useCallback((layerId, compId) => {
     if (!layerId) { setSelLayer(null); setSelComp(null); }
-    else { setSelLayer(layerId); setSelComp(compId || null); setTab("architecture"); }
+    else { setSelLayer(layerId); setSelComp(compId || null); setTab("detail"); }
   }, []);
 
   const layer = selLayer ? LAYERS.find(l => l.id === selLayer) : null;
 
+  const tabs = [
+    {id:"diagram", label:"📐 Diagram"},
+    {id:"detail", label:"🔍 Explore"},
+    {id:"flow", label:"⚡ Request Flow"}
+  ];
+
+/* ─── Architecture Diagram (full visual) ─── */
+function ArchDiagramFull({ onSelect }) {
+  const [activeComp, setActiveComp] = useState(null);
+  const comp = activeComp ? compMap[activeComp] : null;
+
+  const layers = [
+    {n:"1",name:"Access layer",tag:"Portal / API / Auth",color:"#7F77DD",bg:"#EEEDFE20",bc:"#CECBF6",tc:"#3C3489",
+      comps:[{id:"portal",name:"Web portal",sub:"React chat + builder"},{id:"api",name:"API gateway",sub:"FastAPI + rate limits"},{id:"auth",name:"Auth + RBAC",sub:"Azure AD / SSO"}]},
+    {n:"2",name:"Core AI services",tag:"Orchestration / RAG / Routing / Tools",color:"#378ADD",bg:"#E6F1FB20",bc:"#B5D4F4",tc:"#0C447C",
+      comps:[{id:"orchestrator",name:"Agent orchestrator",sub:"DAG workflows"},{id:"knowledge",name:"Knowledge + RAG",sub:"Hybrid search"},{id:"router",name:"Model router",sub:"Multi-provider"}],
+      row2:[{id:"tools",name:"Tool / MCP layer",sub:"Jira, Salesforce, SQL"},{id:"prompts",name:"Prompt registry",sub:"Versioned, A/B tested"},{id:"llm",name:"LLM providers",sub:"Claude, GPT-4o, vLLM",special:true}]},
+    {n:"3",name:"Data + storage layer",tag:"Postgres / Vector DB / Blob / Redis / Telemetry",color:"#BA7517",bg:"#FAEEDA20",bc:"#FAC775",tc:"#633806",
+      comps:[{id:"postgres",name:"PostgreSQL",sub:"Agents, prompts, audit"},{id:"vectordb",name:"Vector search",sub:"Azure AI Search"},{id:"objstore",name:"Azure Blob",sub:"Files, documents"},{id:"cache",name:"Redis cache",sub:"Sessions, rate limits"},{id:"telemetry",name:"Telemetry",sub:"Cost + usage"}]},
+    {n:"4",name:"Platform + governance",tag:"K8s / CI-CD / Observability / Security",color:"#D85A30",bg:"#FAECE720",bc:"#F5C4B3",tc:"#712B13",
+      comps:[{id:"k8s",name:"Kubernetes (AKS)",sub:"Containers, GPU"},{id:"cicd",name:"CI/CD pipeline",sub:"GitOps, canary"},{id:"observability",name:"Observability",sub:"Traces, metrics, logs"},{id:"security",name:"Security + governance",sub:"PII, guardrails, audit"}]}
+  ];
+
+  const arrows = [
+    {label:"requests flow down",color:"#B5D4F4"},
+    {label:"reads and writes",color:"#FAC775"},
+    {label:"runs on",color:"#F5C4B3"}
+  ];
+
+  const compDetails = {};
+  LAYERS.forEach(l => l.components.forEach(c => {
+    compDetails[c.id] = {name:c.name,tech:c.techYouKnow,color:l.color,bg:l.bg,desc:c.desc,details:c.details};
+  }));
+
+  function CompBox({c,ly,isSpecial}) {
+    const isActive = activeComp === c.id;
+    return (
+      <div onClick={(e) => {e.stopPropagation(); setActiveComp(isActive?null:c.id);}}
+        style={{flex:1,minWidth:90,maxWidth:180,padding:"10px 12px",borderRadius:10,
+          border:`1px solid ${isSpecial?"#9FE1CB":ly.bc}`,cursor:"pointer",transition:"all .15s",textAlign:"center",
+          background:isActive?ly.color:(isSpecial?"#E1F5EE30":"var(--bg1)"),
+          color:isActive?"#fff":(isSpecial?"#085041":ly.tc),
+          transform:isActive?"translateY(-2px)":"none",
+          boxShadow:isActive?`0 4px 12px ${ly.color}25`:"none"}}>
+        <div style={{fontSize:12,fontWeight:500,lineHeight:1.3}}>{c.name}</div>
+        <div style={{fontSize:10,opacity:.7,marginTop:2,lineHeight:1.2}}>{c.sub}</div>
+      </div>
+    );
+  }
+
+  const d = activeComp ? compDetails[activeComp] : null;
+
   return (
-    <div style={{maxWidth:720,margin:"0 auto",padding:"28px 16px"}}>
+    <div className="fi">
+      <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.6,marginBottom:14}}>Traditional architecture diagram — 4 layers, all components, data flow. Click any block to see details.</p>
+      {layers.map((ly,li) => (
+        <React.Fragment key={ly.n}>
+          <div style={{borderRadius:14,padding:14,marginBottom:li<3?2:0,border:`1px solid ${ly.bc}`,background:ly.bg}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:28,height:28,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#fff",background:ly.color,flexShrink:0}}>{ly.n}</div>
+              <div style={{fontSize:14,fontWeight:500,color:"var(--tx1)"}}>{ly.name}</div>
+              <div style={{fontSize:11,color:"var(--tx3)",marginLeft:"auto"}}>{ly.tag}</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {ly.comps.map(c => <CompBox key={c.id} c={c} ly={ly} />)}
+            </div>
+            {ly.row2 && (
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                {ly.row2.map(c => <CompBox key={c.id} c={c} ly={ly} isSpecial={c.special} />)}
+              </div>
+            )}
+          </div>
+          {li < 3 && (
+            <div style={{textAlign:"center",padding:"4px 0"}}>
+              <svg width="24" height="20" viewBox="0 0 24 20"><path d="M12 2 L12 14 M7 10 L12 16 L17 10" fill="none" stroke={arrows[li].color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <div style={{fontSize:10,color:"var(--tx3)",letterSpacing:.3}}>{arrows[li].label}</div>
+            </div>
+          )}
+        </React.Fragment>
+      ))}
+
+      {d && (
+        <div className="fi" key={activeComp} style={{borderRadius:14,padding:20,marginTop:12,border:"1px solid var(--bdl)",borderLeft:`4px solid ${d.color}`,background:"var(--bg1)"}}>
+          <div style={{fontSize:18,fontWeight:600,color:"var(--tx1)",marginBottom:4}}>{d.name}</div>
+          <div style={{fontSize:12,fontWeight:600,marginBottom:10,background:d.bg,color:d.color,display:"inline-block",padding:"3px 10px",borderRadius:6}}>{d.tech}</div>
+          <p style={{fontSize:14,color:"var(--tx2)",lineHeight:1.7,marginBottom:14}}>{d.desc}</p>
+          <div style={{fontSize:13,fontWeight:600,color:"var(--tx1)",marginBottom:8}}>Key capabilities</div>
+          {d.details.map((f,i) => (
+            <div key={i} style={{fontSize:13,color:"var(--tx2)",lineHeight:1.6,padding:"4px 0 4px 14px",borderLeft:`2px solid ${d.color}40`}}>{f}</div>
+          ))}
+          <button onClick={() => { const info = compMap[activeComp]; if(info) onSelect(info.layer.id, activeComp); }}
+            style={{marginTop:14,fontSize:12,padding:"7px 16px",borderRadius:8,background:d.color+"18",color:d.color,border:`1px solid ${d.color}35`,cursor:"pointer",fontWeight:600}}>
+            Full details in Explore tab →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+  return (
+    <div style={{maxWidth:740,margin:"0 auto",padding:"28px 16px"}}>
       <div style={{marginBottom:24}}>
         <div style={{fontSize:26,fontWeight:700,color:"var(--tx1)",marginBottom:4}}>Enterprise AI Platform</div>
-        <div style={{fontSize:14,color:"var(--tx3)"}}>Simplified architecture — 4 layers, 8-step request flow</div>
+        <div style={{fontSize:14,color:"var(--tx3)"}}>Azure-native · 4 layers · {LAYERS.reduce((a,l)=>a+l.components.length,0)} components · 8-step request flow</div>
       </div>
 
-      {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:22,background:"var(--bg2)",borderRadius:10,padding:4,width:"fit-content"}}>
-        {[{id:"architecture",label:"🏗 Architecture"},{id:"flow",label:"⚡ Request Flow"}].map(t => (
-          <button key={t.id} onClick={() => { setTab(t.id); if(t.id==="architecture"){setSelLayer(null);setSelComp(null);} }}
-            style={{padding:"9px 20px",fontSize:14,fontWeight:t.id===tab?600:400,
-              color:t.id===tab?"#fff":"var(--tx2)",
-              background:t.id===tab?"var(--acc)":"transparent",
-              border:"none",borderRadius:7,cursor:"pointer",transition:"all .15s"}}>
-            {t.label}
-          </button>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="detail"){setSelLayer(null);setSelComp(null);} }}
+            style={{padding:"9px 18px",fontSize:13,fontWeight:t.id===tab?600:400,
+              color:t.id===tab?"#fff":"var(--tx2)",background:t.id===tab?"var(--acc)":"transparent",
+              border:"none",borderRadius:7,cursor:"pointer",transition:"all .15s"}}>{t.label}</button>
         ))}
       </div>
 
-      {/* Content */}
       <div style={{minHeight:400}}>
-        {tab === "architecture" && !layer && <LayerOverview layers={LAYERS} onSelect={id => handleSelect(id)} />}
-        {tab === "architecture" && layer && <LayerDetail layer={layer} selComp={selComp} onSelect={handleSelect} onBack={() => handleSelect(null)} />}
+        {tab === "diagram" && <ArchDiagramFull onSelect={handleSelect} />}
+        {tab === "detail" && !layer && <LayerOverview layers={LAYERS} onSelect={id => handleSelect(id)} />}
+        {tab === "detail" && layer && <LayerDetail layer={layer} selComp={selComp} onSelect={handleSelect} onBack={() => handleSelect(null)} />}
         {tab === "flow" && <RequestFlow onSelect={handleSelect} />}
       </div>
 
       <div style={{textAlign:"center",marginTop:36,padding:"16px 0",borderTop:"1px solid var(--bdl)",fontSize:12,color:"var(--tx3)"}}>
-        Enterprise AI Platform Architecture · 4 Layers · {LAYERS.reduce((a,l)=>a+l.components.length,0)} Components · 8-Step Request Flow
+        Enterprise AI Platform Architecture · Azure-native
       </div>
     </div>
   );
